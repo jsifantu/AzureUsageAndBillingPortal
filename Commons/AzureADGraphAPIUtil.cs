@@ -27,6 +27,7 @@ using System.Configuration;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Web.Helpers;
+using System.Threading.Tasks;
 
 namespace Commons
 {
@@ -45,8 +46,8 @@ namespace Commons
 
                 // initialize AuthenticationContext with the token cache of the currently signed in user, as kept in the app's EF DB
                 AuthenticationContext authContext = new AuthenticationContext(string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId));
-                AuthenticationResult result = authContext.AcquireToken(ConfigurationManager.AppSettings["ida:GraphAPIIdentifier"], credential);
-
+                Task<AuthenticationResult> result = authContext.AcquireTokenAsync(ConfigurationManager.AppSettings["ida:GraphAPIIdentifier"], credential);
+                result.Wait();
                 // Get a list of Organizations of which the user is a member
                 string requestUrl = string.Format("{0}{1}/servicePrincipals?api-version={2}&$filter=appId eq '{3}'",
                                                     ConfigurationManager.AppSettings["ida:GraphAPIIdentifier"], organizationId,
@@ -55,7 +56,7 @@ namespace Commons
                 // Make the GET request
                 HttpClient client = new HttpClient();
                 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.Result.AccessToken);
                 HttpResponseMessage response = client.SendAsync(request).Result;
 
                 // Endpoint should return JSON with one or none serviePrincipal object

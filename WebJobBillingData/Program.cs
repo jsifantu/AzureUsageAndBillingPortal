@@ -42,18 +42,22 @@ namespace WebJobBillingData
         {
             Console.WriteLine("*************************************************************************");
             Console.WriteLine("WebJobUsageHistory:Main starting. DateTimeUTC: {0}", DateTime.UtcNow);
+            // Get organization ID, which I think corresponds to the tenant domain
+            var organizations = AzureResourceManagerUtil.GetUserOrganizations();
 
-
-/*/
-            DateTime sdt = DateTime.Now.AddYears(-3);
-            DateTime edt = DateTime.Now.AddDays(-1);
-            BillingRequest br = new BillingRequest("30d4242f-1afc-49d9-a993-59d0de83b5bd",
-                                                    "72f988bf-86f1-41af-91ab-2d7cd011db47",
-                                                    sdt, //Convert.ToDateTime("2015-10-28 00:00:00.000"),
-                                                    edt);//Convert.ToDateTime("2015-10-29 00:00:00.000"));
-            Functions.ProcessQueueMessage(br);
+            foreach (var organization in organizations) {
+                // Get all subscriptions for the specified user
+                var subscriptions = AzureResourceManagerUtil.GetUserSubscriptions(organization.Id);
+                foreach (var subscription in subscriptions) {
+                    DateTime sdt = DateTime.Now.AddYears(-3);
+                    DateTime edt = DateTime.Now.AddDays(-1);
+                    BillingRequest br = new BillingRequest(subscription.Id, organization.Id,
+                                                            sdt, edt);
+                    Functions.ProcessQueueMessage(br);
+                }
+            }
             return;
-/**/
+/**
 
             JobHostConfiguration config = new JobHostConfiguration();
             config.Queues.BatchSize = 3;
@@ -63,6 +67,7 @@ namespace WebJobBillingData
             var host = new JobHost(config);
             // The following code ensures that the WebJob will be running continuously
             host.RunAndBlock();
+**/
         }
     }
 }

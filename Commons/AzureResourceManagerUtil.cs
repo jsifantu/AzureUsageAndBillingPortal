@@ -32,6 +32,7 @@ using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
 using System.Web.Helpers;
+using System.Threading.Tasks;
 
 using System.Net;
 using System.Web;
@@ -50,29 +51,32 @@ namespace Commons
         public static List<Organization> GetUserOrganizations()
         {
             List<Organization> organizations = new List<Organization>();
-
+            /**
             string tenantId = ClaimsPrincipal.Current.FindFirst("http://schemas.microsoft.com/identity/claims/tenantid").Value;
             string signedInUserUniqueName = ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#')[ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#').Length - 1];
-
-            try
-            {
+            */
+            string signedInUserUniqueName = ConfigurationManager.AppSettings["ida:SignedInUserUniqueName"];
+            string tenantId = ConfigurationManager.AppSettings["ida:TenantId"];
+            try {
                 // Aquire Access Token to call Azure Resource Manager
                 ClientCredential credential = new ClientCredential(
-                                                            ConfigurationManager.AppSettings["ida:ClientID"],
+                                                            ConfigurationManager.AppSettings["ida:ClientId"],
                                                             ConfigurationManager.AppSettings["ida:Password"]);
 
                 // initialize AuthenticationContext with the token cache of the currently signed in user, as kept in the app's EF DB
                 AuthenticationContext authContext = new AuthenticationContext(
-                                                            string.Format(ConfigurationManager.AppSettings["ida:Authority"], tenantId),
+                                                            string.Format(ConfigurationManager.AppSettings["ida:Authority"],
+                                                            ConfigurationManager.AppSettings["ida:TenantID"]),
                                                             new ADALTokenCache(signedInUserUniqueName));
 
                 var items = authContext.TokenCache.ReadItems().ToList();
 
-                AuthenticationResult result = authContext.AcquireTokenSilent(
+                Task<AuthenticationResult> result = authContext.AcquireTokenSilentAsync(
                                                             ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"],
                                                             credential,
                                                             new UserIdentifier(signedInUserUniqueName, UserIdentifierType.RequiredDisplayableId));
 
+                result.Wait();
                 items = authContext.TokenCache.ReadItems().ToList();
 
                 // Get a list of Organizations of which the user is a member            
@@ -83,7 +87,7 @@ namespace Commons
                 // Make the GET request
                 HttpClient client = new HttpClient();
                 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.Result.AccessToken);
                 HttpResponseMessage response = client.SendAsync(request).Result;
 
                 // Endpoint returns JSON with an array of Tenant Objects
@@ -92,23 +96,19 @@ namespace Commons
                 // /tenants/7fe8....304dfa0 7fe877...fa0
                 // /tenants/62e1.....c1aa24 62e......a24
 
-                if (response.IsSuccessStatusCode)
-                {
+                if (response.IsSuccessStatusCode) {
                     string responseContent = response.Content.ReadAsStringAsync().Result;
                     var organizationsResult = (Json.Decode(responseContent)).value;
 
                     foreach (var organization in organizationsResult)
-                        organizations.Add(new Organization()
-                        {
+                        organizations.Add(new Organization() {
                             Id = organization.tenantId,
                             //DisplayName = AzureADGraphAPIUtil.GetOrganizationDisplayName(organization.tenantId),
                             objectIdOfUsageServicePrincipal =
                                 AzureADGraphAPIUtil.GetObjectIdOfServicePrincipalInOrganization(organization.tenantId, ConfigurationManager.AppSettings["ida:ClientID"])
                         });
                 }
-            }
-            catch
-            {
+            } catch {
                 ClientCredential credential = new ClientCredential(
                                                         ConfigurationManager.AppSettings["ida:ClientID"],
                                                         ConfigurationManager.AppSettings["ida:Password"]);
@@ -119,44 +119,48 @@ namespace Commons
                                                         new ADALTokenCache(signedInUserUniqueName));
 
                 var items = authContext.TokenCache.ReadItems().ToList();
+                try {
+                    Task<AuthenticationResult> result = authContext.AcquireTokenAsync(ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential);
+                    result.Wait();
+                    //(ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential,
+                    //new UserIdentifier(signedInUserUniqueName, UserIdentifierType.RequiredDisplayableId));
 
-                AuthenticationResult result = authContext.AcquireToken(ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential);
+                    items = authContext.TokenCache.ReadItems().ToList();
 
-                //(ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential,
-                //new UserIdentifier(signedInUserUniqueName, UserIdentifierType.RequiredDisplayableId));
+                    // Get a list of Organizations of which the user is a member            
+                    string requestUrl = string.Format("{0}/tenants?api-version={1}",
+                                                    ConfigurationManager.AppSettings["ida:AzureResourceManagerUrl"],
+                                                    ConfigurationManager.AppSettings["ida:AzureResourceManagerAPIVersion"]);
 
-                items = authContext.TokenCache.ReadItems().ToList();
+                    // Make the GET request
+                    HttpClient client = new HttpClient();
+                    HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.Result.AccessToken);
+                    HttpResponseMessage response = client.SendAsync(request).Result;
 
-                // Get a list of Organizations of which the user is a member            
-                string requestUrl = string.Format("{0}/tenants?api-version={1}",
-                                                ConfigurationManager.AppSettings["ida:AzureResourceManagerUrl"],
-                                                ConfigurationManager.AppSettings["ida:AzureResourceManagerAPIVersion"]);
+                    // Endpoint returns JSON with an array of Tenant Objects
+                    // id                                            tenantId
+                    // --                                            --------
+                    // /tenants/7fe87...4dfa0 7fe8...a0
+                    // /tenants/62e1......a24 62....a24
 
-                // Make the GET request
-                HttpClient client = new HttpClient();
-                HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
-                HttpResponseMessage response = client.SendAsync(request).Result;
+                    if (response.IsSuccessStatusCode) {
+                        string responseContent = response.Content.ReadAsStringAsync().Result;
+                        var organizationsResult = (Json.Decode(responseContent)).value;
 
-                // Endpoint returns JSON with an array of Tenant Objects
-                // id                                            tenantId
-                // --                                            --------
-                // /tenants/7fe87...4dfa0 7fe8...a0
-                // /tenants/62e1......a24 62....a24
-
-                if (response.IsSuccessStatusCode)
-                {
-                    string responseContent = response.Content.ReadAsStringAsync().Result;
-                    var organizationsResult = (Json.Decode(responseContent)).value;
-
-                    foreach (var organization in organizationsResult)
-                        organizations.Add(new Organization()
-                        {
-                            Id = organization.tenantId,
-                            //DisplayName = AzureADGraphAPIUtil.GetOrganizationDisplayName(organization.tenantId),
-                            objectIdOfUsageServicePrincipal =
-                                AzureADGraphAPIUtil.GetObjectIdOfServicePrincipalInOrganization(organization.tenantId, ConfigurationManager.AppSettings["ida:ClientID"])
-                        });
+                        foreach (var organization in organizationsResult)
+                            organizations.Add(new Organization() {
+                                Id = organization.tenantId,
+                                //DisplayName = AzureADGraphAPIUtil.GetOrganizationDisplayName(organization.tenantId),
+                                objectIdOfUsageServicePrincipal =
+                                    AzureADGraphAPIUtil.GetObjectIdOfServicePrincipalInOrganization(organization.tenantId, ConfigurationManager.AppSettings["ida:ClientID"])
+                            });
+                    }
+                } catch (AggregateException ae) {
+                    ae.Handle(e => {
+                        Console.WriteLine(e);
+                        return true;
+                    });                    
                 }
             }
             return organizations;
@@ -166,10 +170,11 @@ namespace Commons
         {
             List<Subscription> subscriptions = null;
 
-            string signedInUserUniqueName = ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#')[ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#').Length - 1];
+            // string signedInUserUniqueName = ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#')[ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#').Length - 1];
+            string signedInUserUniqueName = ConfigurationManager.AppSettings["ida:SignedInUserUniqueName"];
 
-            try
-            {
+            try {
+                string accessToken = string.Empty;
                 // Aquire Access Token to call Azure Resource Manager
                 ClientCredential credential = new ClientCredential(
                                                         ConfigurationManager.AppSettings["ida:ClientID"],
@@ -180,11 +185,19 @@ namespace Commons
                                                         string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId),
                                                         new ADALTokenCache(signedInUserUniqueName));
 
-                AuthenticationResult result = authContext.AcquireTokenSilent(
-                                                        ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"],
-                                                        credential,
-                                                        new UserIdentifier(signedInUserUniqueName, UserIdentifierType.RequiredDisplayableId));
-
+                // Trying to figure out the problem with AcquireTokenSilenAsync never 
+                // finding the cached token.
+                if (authContext.TokenCache.ReadItems().Count() == 0) {
+                    authContext.TokenCache.Clear();
+                    Task<AuthenticationResult> result = authContext.AcquireTokenSilentAsync(
+                                                            ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"],
+                                                            credential,
+                                                            new UserIdentifier(signedInUserUniqueName, UserIdentifierType.RequiredDisplayableId));
+                    result.Wait();
+                    accessToken = result.Result.AccessToken;
+                } else {
+                    accessToken = authContext.TokenCache.ReadItems().ToList()[0].AccessToken;
+                }
                 subscriptions = new List<Subscription>();
 
                 // Get subscriptions to which the user has some kind of access
@@ -195,25 +208,21 @@ namespace Commons
                 // Make the GET request
                 HttpClient client = new HttpClient();
                 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
                 HttpResponseMessage response = client.SendAsync(request).Result;
 
-                if (response.IsSuccessStatusCode)
-                {
+                if (response.IsSuccessStatusCode) {
                     string responseContent = response.Content.ReadAsStringAsync().Result;
                     var subscriptionsResult = (Json.Decode(responseContent)).value;
 
                     foreach (var subscription in subscriptionsResult)
-                        subscriptions.Add(new Subscription()
-                        {
+                        subscriptions.Add(new Subscription() {
                             Id = subscription.subscriptionId,
                             DisplayName = subscription.displayName,
                             OrganizationId = organizationId
                         });
                 }
-            }
-            catch
-            {
+            } catch {
 
                 //ClientCredential credential = new ClientCredential(ConfigurationManager.AppSettings["ida:ClientID"],
                 //   ConfigurationManager.AppSettings["ida:Password"]);
@@ -269,8 +278,7 @@ namespace Commons
 
             string signedInUserUniqueName = ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#')[ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#').Length - 1];
 
-            try
-            {
+            try {
                 // Aquire Access Token to call Azure Resource Manager
                 ClientCredential credential = new ClientCredential(
                                                         ConfigurationManager.AppSettings["ida:ClientID"],
@@ -281,11 +289,11 @@ namespace Commons
                                                         string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId),
                                                         new ADALTokenCache(signedInUserUniqueName));
 
-                AuthenticationResult result = authContext.AcquireTokenSilent(
+                Task<AuthenticationResult> result = authContext.AcquireTokenSilentAsync(
                                                         ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"],
                                                         credential,
                                                         new UserIdentifier(signedInUserUniqueName, UserIdentifierType.RequiredDisplayableId));
-
+                result.Wait();
                 // Get permissions of the user on the subscription
                 string requestUrl = string.Format("{0}/subscriptions/{1}/providers/microsoft.authorization/permissions?api-version={2}",
                                                         ConfigurationManager.AppSettings["ida:AzureResourceManagerUrl"],
@@ -295,7 +303,7 @@ namespace Commons
                 // Make the GET request
                 HttpClient client = new HttpClient();
                 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.Result.AccessToken);
                 HttpResponseMessage response = client.SendAsync(request).Result;
 
                 // Endpoint returns JSON with an array of Actions and NotActions
@@ -304,26 +312,21 @@ namespace Commons
                 // {*}      {Microsoft.Authorization/*/Write, Microsoft.Authorization/*/Delete}
                 // {*/read} {}
 
-                if (response.IsSuccessStatusCode)
-                {
+                if (response.IsSuccessStatusCode) {
                     string responseContent = response.Content.ReadAsStringAsync().Result;
                     var permissionsResult = (Json.Decode(responseContent)).value;
 
-                    foreach (var permissions in permissionsResult)
-                    {
+                    foreach (var permissions in permissionsResult) {
                         bool permissionMatch = false;
-                        foreach (string action in permissions.actions)
-                        {
+                        foreach (string action in permissions.actions) {
                             var actionPattern = "^" + Regex.Escape(action.ToLower()).Replace("\\*", ".*") + "$";
                             permissionMatch = Regex.IsMatch("microsoft.authorization/roleassignments/write", actionPattern);
                             if (permissionMatch) break;
                         }
 
                         // if one of the actions match, check that the NotActions don't
-                        if (permissionMatch)
-                        {
-                            foreach (string notAction in permissions.notActions)
-                            {
+                        if (permissionMatch) {
+                            foreach (string notAction in permissions.notActions) {
                                 var notActionPattern = "^" + Regex.Escape(notAction.ToLower()).Replace("\\*", ".*") + "$";
                                 if (Regex.IsMatch("microsoft.authorization/roleassignments/write", notActionPattern))
                                     permissionMatch = false;
@@ -331,15 +334,13 @@ namespace Commons
                             }
                         }
 
-                        if (permissionMatch)
-                        {
+                        if (permissionMatch) {
                             ret = true;
                             break;
                         }
                     }
                 }
-            }
-            catch { }
+            } catch { }
 
             return ret;
         }
@@ -348,8 +349,7 @@ namespace Commons
         {
             bool ret = false;
 
-            try
-            {
+            try {
                 // Aquire App Only Access Token to call Azure Resource Manager - Client Credential OAuth Flow
                 ClientCredential credential = new ClientCredential(
                                                         ConfigurationManager.AppSettings["ida:ClientID"],
@@ -357,19 +357,18 @@ namespace Commons
 
                 // initialize AuthenticationContext with the token cache of the currently signed in user, as kept in the app's EF DB
                 AuthenticationContext authContext = new AuthenticationContext(string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId));
-                AuthenticationResult result = authContext.AcquireToken(ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential);
-
+                Task<AuthenticationResult> result = authContext.AcquireTokenAsync(ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential);
+                result.Wait();
 
                 // Get permissions of the app on the subscription
                 string requestUrl = string.Format("{0}/subscriptions/{1}/providers/microsoft.authorization/permissions?api-version={2}",
-                                                        ConfigurationManager.AppSettings["ida:AzureResourceManagerUrl"], 
-                                                        subscriptionId, 
+                                                        ConfigurationManager.AppSettings["ida:AzureResourceManagerUrl"],
+                                                        subscriptionId,
                                                         ConfigurationManager.AppSettings["ida:ARMAuthorizationPermissionsAPIVersion"]);
-
                 // Make the GET request
                 HttpClient client = new HttpClient();
                 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.Result.AccessToken);
                 HttpResponseMessage response = client.SendAsync(request).Result;
 
                 // Endpoint returns JSON with an array of Actions and NotActions
@@ -378,41 +377,34 @@ namespace Commons
                 // {*}      {Microsoft.Authorization/*/Write, Microsoft.Authorization/*/Delete}
                 // {*/read} {}
 
-                if (response.IsSuccessStatusCode)
-                {
+                if (response.IsSuccessStatusCode) {
                     string responseContent = response.Content.ReadAsStringAsync().Result;
                     var permissionsResult = (Json.Decode(responseContent)).value;
 
-                    foreach (var permissions in permissionsResult)
-                    {
+                    foreach (var permissions in permissionsResult) {
                         bool permissionMatch = false;
                         foreach (string action in permissions.actions)
-                            if (action.Equals("*/read", StringComparison.CurrentCultureIgnoreCase) || action.Equals("*", StringComparison.CurrentCultureIgnoreCase))
-                            {
+                            if (action.Equals("*/read", StringComparison.CurrentCultureIgnoreCase) || action.Equals("*", StringComparison.CurrentCultureIgnoreCase)) {
                                 permissionMatch = true;
                                 break;
                             }
 
                         // if one of the actions match, check that the NotActions don't
-                        if (permissionMatch)
-                        {
+                        if (permissionMatch) {
                             foreach (string notAction in permissions.notActions)
-                                if (notAction.Equals("*", StringComparison.CurrentCultureIgnoreCase) || notAction.EndsWith("/read", StringComparison.CurrentCultureIgnoreCase))
-                                {
+                                if (notAction.Equals("*", StringComparison.CurrentCultureIgnoreCase) || notAction.EndsWith("/read", StringComparison.CurrentCultureIgnoreCase)) {
                                     permissionMatch = false;
                                     break;
                                 }
                         }
 
-                        if (permissionMatch)
-                        {
+                        if (permissionMatch) {
                             ret = true;
                             break;
                         }
                     }
                 }
-            }
-            catch { }
+            } catch { }
 
             return ret;
         }
@@ -421,8 +413,7 @@ namespace Commons
         {
             string signedInUserUniqueName = ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#')[ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#').Length - 1];
 
-            try
-            {
+            try {
                 // Aquire Access Token to call Azure Resource Manager
                 ClientCredential credential = new ClientCredential(
                                                         ConfigurationManager.AppSettings["ida:ClientID"],
@@ -430,14 +421,14 @@ namespace Commons
 
                 // initialize AuthenticationContext with the token cache of the currently signed in user, as kept in the app's EF DB
                 AuthenticationContext authContext = new AuthenticationContext(
-                                                        string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId), 
+                                                        string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId),
                                                         new ADALTokenCache(signedInUserUniqueName));
 
-                AuthenticationResult result = authContext.AcquireTokenSilent(
-                                                        ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], 
+                Task<AuthenticationResult> result = authContext.AcquireTokenSilentAsync(
+                                                        ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"],
                                                         credential,
                                                         new UserIdentifier(signedInUserUniqueName, UserIdentifierType.RequiredDisplayableId));
-
+                result.Wait();
 
                 // Get rolesAssignments to application on the subscription
                 string requestUrl = string.Format("{0}/subscriptions/{1}/providers/microsoft.authorization/roleassignments?api-version={2}&$filter=principalId eq '{3}'",
@@ -447,7 +438,7 @@ namespace Commons
                 // Make the GET request
                 HttpClient client = new HttpClient();
                 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.Result.AccessToken);
                 HttpResponseMessage response = client.SendAsync(request).Result;
 
                 // Endpoint returns JSON with an array of role assignments
@@ -455,33 +446,29 @@ namespace Commons
                 // ----------                                  --                                          ----                                        ----
                 // @{roleDefinitionId=/subscriptions/e91d47... /subscriptions/e91d4...1-a796-2...          Microsoft.Authorization/roleAssignments     9db2cd....b1b8
 
-                if (response.IsSuccessStatusCode)
-                {
+                if (response.IsSuccessStatusCode) {
                     string responseContent = response.Content.ReadAsStringAsync().Result;
                     var roleAssignmentsResult = (Json.Decode(responseContent)).value;
 
                     //remove all role assignments
-                    foreach (var roleAssignment in roleAssignmentsResult)
-                    {
+                    foreach (var roleAssignment in roleAssignmentsResult) {
                         requestUrl = string.Format("{0}{1}?api-version={2}",
                                                 ConfigurationManager.AppSettings["ida:AzureResourceManagerUrl"], roleAssignment.id,
                                                 ConfigurationManager.AppSettings["ida:ARMAuthorizationRoleAssignmentsAPIVersion"]);
 
                         request = new HttpRequestMessage(HttpMethod.Delete, requestUrl);
-                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
+                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.Result.AccessToken);
                         response = client.SendAsync(request).Result;
                     }
                 }
-            }
-            catch { }
+            } catch { }
         }
 
         public static void GrantRoleToServicePrincipalOnSubscription(string objectId, string subscriptionId, string organizationId)
         {
             string signedInUserUniqueName = ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#')[ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#').Length - 1];
 
-            try
-            {
+            try {
                 // Aquire Access Token to call Azure Resource Manager
                 ClientCredential credential = new ClientCredential(
                                                         ConfigurationManager.AppSettings["ida:ClientID"],
@@ -489,13 +476,13 @@ namespace Commons
 
                 // initialize AuthenticationContext with the token cache of the currently signed in user, as kept in the app's EF DB
                 AuthenticationContext authContext = new AuthenticationContext(
-                                                        string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId), 
+                                                        string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId),
                                                         new ADALTokenCache(signedInUserUniqueName));
 
-                AuthenticationResult result = authContext.AcquireTokenSilent(
+                Task<AuthenticationResult> result = authContext.AcquireTokenSilentAsync(
                                                         ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential,
                                                         new UserIdentifier(signedInUserUniqueName, UserIdentifierType.RequiredDisplayableId));
-
+                result.Wait();
                 // Create role assignment for application on the subscription
                 string roleAssignmentId = Guid.NewGuid().ToString();
                 string roleDefinitionId = GetRoleId(ConfigurationManager.AppSettings["ida:RequiredARMRoleOnSubscription"], subscriptionId, organizationId);
@@ -506,13 +493,12 @@ namespace Commons
 
                 HttpClient client = new HttpClient();
                 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Put, requestUrl);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.Result.AccessToken);
                 StringContent content = new StringContent("{\"properties\": {\"roleDefinitionId\":\"" + roleDefinitionId + "\",\"principalId\":\"" + objectId + "\"}}");
                 content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
                 request.Content = content;
                 HttpResponseMessage response = client.SendAsync(request).Result;
-            }
-            catch { }
+            } catch { }
         }
 
         public static string GetRoleId(string roleName, string subscriptionId, string organizationId)
@@ -521,8 +507,7 @@ namespace Commons
 
             string signedInUserUniqueName = ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#')[ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#').Length - 1];
 
-            try
-            {
+            try {
                 // Aquire Access Token to call Azure Resource Manager
                 ClientCredential credential = new ClientCredential(
                                                         ConfigurationManager.AppSettings["ida:ClientID"],
@@ -530,14 +515,14 @@ namespace Commons
 
                 // initialize AuthenticationContext with the token cache of the currently signed in user, as kept in the app's EF DB
                 AuthenticationContext authContext = new AuthenticationContext(
-                                                        string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId), 
+                                                        string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId),
                                                         new ADALTokenCache(signedInUserUniqueName));
-                
-                AuthenticationResult result = authContext.AcquireTokenSilent(
-                                                        ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], 
+
+                Task<AuthenticationResult> result = authContext.AcquireTokenSilentAsync(
+                                                        ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"],
                                                         credential,
                                                         new UserIdentifier(signedInUserUniqueName, UserIdentifierType.RequiredDisplayableId));
-
+                result.Wait();
                 // Get subscriptions to which the user has some kind of access
                 string requestUrl = string.Format("{0}/subscriptions/{1}/providers/Microsoft.Authorization/roleDefinitions?api-version={2}",
                                                         ConfigurationManager.AppSettings["ida:AzureResourceManagerUrl"], subscriptionId,
@@ -546,7 +531,7 @@ namespace Commons
                 // Make the GET request
                 HttpClient client = new HttpClient();
                 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.AccessToken);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.Result.AccessToken);
                 HttpResponseMessage response = client.SendAsync(request).Result;
 
                 // Endpoint returns JSON with an array of roleDefinition Objects
@@ -557,20 +542,17 @@ namespace Commons
                 // @{roleName=Reader; type=BuiltInRole; des... /subscriptions/e91.c4-.6-2...               Microsoft.Authorization/roleDefinitions     acd.....e7
                 // ...
 
-                if (response.IsSuccessStatusCode)
-                {
+                if (response.IsSuccessStatusCode) {
                     string responseContent = response.Content.ReadAsStringAsync().Result;
                     var roleDefinitionsResult = (Json.Decode(responseContent)).value;
 
                     foreach (var roleDefinition in roleDefinitionsResult)
-                        if ((roleDefinition.properties.roleName as string).Equals(roleName, StringComparison.CurrentCultureIgnoreCase))
-                        {
+                        if ((roleDefinition.properties.roleName as string).Equals(roleName, StringComparison.CurrentCultureIgnoreCase)) {
                             roleId = roleDefinition.id;
                             break;
                         }
                 }
-            }
-            catch { }
+            } catch { }
 
             return roleId;
         }
@@ -578,8 +560,7 @@ namespace Commons
         public static HttpWebResponse GetUsage(string subscriptionId, string organizationId, bool dailyReport, bool detailedReport, DateTime startDate, DateTime endDate, string contURL = "")
         {
             //string UsageResponse = "";
-            try
-            {
+            try {
                 string requesturl = "";
 
                 // Aquire App Only Access Token to call Azure Resource Manager - Client Credential OAuth Flow
@@ -590,10 +571,10 @@ namespace Commons
                 // initialize AuthenticationContext with the token cache of the currently signed in user, as kept in the app's EF DB
                 AuthenticationContext authContext = new AuthenticationContext(string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId));
 
-                AuthenticationResult result = authContext.AcquireToken(ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential);
+                Task<AuthenticationResult> result = authContext.AcquireTokenAsync(ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential);
+                result.Wait();
 
-                if (contURL == "")
-                {
+                if (contURL == "") {
                     string apiVersion = "2015-06-01-preview";
 
                     /* STATIC PARAMETERS FOR DEBUG
@@ -627,15 +608,13 @@ namespace Commons
                                                        reportedEndTime,
                                                        aggregationGranularity,
                                                        showDetails);
-                }
-                else
-                {
+                } else {
                     requesturl = contURL;
                 }
 
                 //Crafting the HTTP call
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(requesturl);
-                request.Headers.Add(HttpRequestHeader.Authorization, "Bearer " + result.AccessToken);
+                request.Headers.Add(HttpRequestHeader.Authorization, "Bearer " + result.Result.AccessToken);
                 request.ContentType = "application/json";
                 HttpWebResponse response = (HttpWebResponse)request.GetResponse();
 
@@ -649,9 +628,7 @@ namespace Commons
                 //// Pipes the stream to a higher level stream reader with the required encoding format. 
                 //StreamReader readStream = new StreamReader(receiveStream, Encoding.UTF8);
                 //UsageResponse = readStream.ReadToEnd();
-            }
-            catch (Exception e)
-            {
+            } catch (Exception e) {
                 Console.WriteLine("GetUsage exception: {0}", e.Message);
             }
 
@@ -666,15 +643,12 @@ namespace Commons
             string reportedStartTime, reportedEndTime;
 
             // remove minute and seconds part
-            if (dailyReport)
-            {
+            if (dailyReport) {
                 dtstart = new DateTime(startDate.Year, startDate.Month, startDate.Day, 0, 0, 0);
                 dtend = new DateTime(endDate.Year, endDate.Month, endDate.Day, 0, 0, 0);
                 reportedStartTime = dtstart.ToString("s", System.Globalization.CultureInfo.InvariantCulture);
                 reportedEndTime = dtend.ToString("s", System.Globalization.CultureInfo.InvariantCulture);
-            }
-            else
-            {
+            } else {
                 dtstart = new DateTime(startDate.Year, startDate.Month, startDate.Day, startDate.Hour, 0, 0);
                 dtend = new DateTime(endDate.Year, endDate.Month, endDate.Day, endDate.Hour, 0, 0);
                 reportedStartTime = TimeZoneInfo.ConvertTimeToUtc(dtstart).ToString("s", System.Globalization.CultureInfo.InvariantCulture);
@@ -702,12 +676,12 @@ namespace Commons
         public static string GetRateCardRestApiCallURL(string subscriptionId, string offerId, string currency, string locale, string regionInfo)
         {
             string url = string.Format("https://management.azure.com/subscriptions/{0}/providers/Microsoft.Commerce/RateCard", subscriptionId);
-            
+
             StringBuilder urlWParameters = new StringBuilder();
             urlWParameters.Append(url);
             urlWParameters.AppendFormat("?{0}={1}", "api-version", HttpUtility.UrlEncode("2015-06-01-preview"));
             urlWParameters.AppendFormat("&$filter=OfferDurableId eq '{0}' and Currency eq '{1}' and Locale eq '{2}' and RegionInfo eq '{3}'", offerId, currency, locale, regionInfo);
-            
+
             return urlWParameters.ToString();
         }
 
@@ -715,8 +689,7 @@ namespace Commons
         {
             HttpWebResponse response = null;
 
-            try
-            {
+            try {
                 // Aquire App Only Access Token to call Azure Resource Manager - Client Credential OAuth Flow
                 ClientCredential credential = new ClientCredential(
                                                         ConfigurationManager.AppSettings["ida:ClientID"],
@@ -725,31 +698,31 @@ namespace Commons
                 // initialize AuthenticationContext with the token cache of the currently signed in user, as kept in the app's EF DB
                 AuthenticationContext authContext = new AuthenticationContext(string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId));
 
-                AuthenticationResult result = authContext.AcquireToken(ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential);
-
+                Task<AuthenticationResult> result = authContext.AcquireTokenAsync(ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential);
+                result.Wait();
                 //Crafting the HTTP call
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(requesturl);
-                request.Headers.Add(HttpRequestHeader.Authorization, "Bearer " + result.AccessToken);
+                request.Headers.Add(HttpRequestHeader.Authorization, "Bearer " + result.Result.AccessToken);
                 request.ContentType = "application/json";
                 //request.KeepAlive = true;
                 //request.Timeout = 1000 * 60 * 2;  // 2 minutes
                 //request.ReadWriteTimeout = 1000 * 60 * 2;
 
                 response = (HttpWebResponse)request.GetResponse();
-            }
-            catch (WebException webExc)
-            {
+            } catch (WebException webExc) {
                 Stream str = webExc.Response.GetResponseStream();
-                using (StreamReader readStream = new StreamReader(str, Encoding.UTF8))
-                {
+                using (StreamReader readStream = new StreamReader(str, Encoding.UTF8)) {
                     string content = readStream.ReadToEnd();
                     Console.WriteLine("Exception: RateCardRestApiCall->e.message: " + webExc.Message);
                     Console.WriteLine("Response content: " + content);
                 }
                 response = null;
-            }
-            catch (Exception e)
-            {
+            } catch (AggregateException ae) {
+                ae.Handle(e => {
+                    Console.WriteLine(e);
+                    return true;
+                });
+            } catch (Exception e) {
                 // Exception occurs because of:
                 //      "The operation has timed out"
                 //      "The remote server returned an error: (403) Forbidden."
@@ -766,8 +739,7 @@ namespace Commons
         {
             HttpWebResponse response = null;
 
-            try
-            {
+            try {
                 // Aquire App Only Access Token to call Azure Resource Manager - Client Credential OAuth Flow
                 ClientCredential credential = new ClientCredential(
                                                         ConfigurationManager.AppSettings["ida:ClientID"],
@@ -776,20 +748,18 @@ namespace Commons
                 // initialize AuthenticationContext with the token cache of the currently signed in user, as kept in the app's EF DB
                 AuthenticationContext authContext = new AuthenticationContext(string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId));
 
-                AuthenticationResult result = authContext.AcquireToken(ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential);
+                Task<AuthenticationResult> result = authContext.AcquireTokenAsync(ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"], credential);
 
                 //Crafting the HTTP call
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(requesturl);
-                request.Headers.Add(HttpRequestHeader.Authorization, "Bearer " + result.AccessToken);
+                request.Headers.Add(HttpRequestHeader.Authorization, "Bearer " + result.Result.AccessToken);
                 request.ContentType = "application/json";
                 //request.KeepAlive = true;
                 //request.Timeout = 1000 * 60 * 2;  // 2 minutes
                 //request.ReadWriteTimeout = 1000 * 60 * 2;
 
                 response = (HttpWebResponse)request.GetResponse();
-            }
-            catch (Exception e)
-            {
+            } catch (Exception e) {
                 // Exception occurs because of:
                 //      "The operation has timed out"
                 //      "The remote server returned an error: (403) Forbidden."
@@ -806,13 +776,10 @@ namespace Commons
         {
             HttpWebResponse response = null;
 
-            try
-            {
+            try {
                 string requesturl = GetBillingRestApiCallURL(subscriptionId, dailyReport, detailedReport, startDate, endDate);
                 response = BillingRestApiCall(requesturl, organizationId);
-            }
-            catch (Exception e)
-            {
+            } catch (Exception e) {
                 Console.WriteLine("Exception: BillingRestApiCall2-e.message: {0}", e.Message);
             }
 
