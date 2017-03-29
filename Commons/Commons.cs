@@ -404,7 +404,9 @@ namespace Commons
             SqlConnection connection = new SqlConnection(connectionString);
             try
             {
-                SqlCommand sqlCommand = new SqlCommand(string.Format("UPDATE Subscriptions SET DataGenStatus = {1},  DataGenDate = DATETIMEFROMPARTS({2}, {3}, {4}, {5}, {6}, {7}, {8}) WHERE Id = '{0}'", id, ((int)dgs), dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second, dt.Millisecond), connection);
+                SqlCommand sqlCommand = new SqlCommand(string.Format(
+                    "UPDATE Subscriptions SET DataGenStatus = {1},  DataGenDate = DATETIMEFROMPARTS({2}, {3}, {4}, {5}, {6}, {7}, {8}) WHERE Id = '{0}'", 
+                    id, ((int)dgs), dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second, dt.Millisecond), connection);
                 connection.Open();
                 sqlCommand.ExecuteNonQuery();
             }

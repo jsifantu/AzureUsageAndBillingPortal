@@ -13,6 +13,88 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 
+--DROP TABLE [dbo].[Subscriptions]
+--GO
+-- Apparently there is a Subscriptions table already
+-- in the DB, but I'm not quite sure how.
+
+CREATE TABLE [dbo].[Subscriptions] (
+	[uid]				UNIQUEIDENTIFIER	NOT NULL,
+	[id]				NVARCHAR(50)		NOT NULL,
+	[displayname]		NVARCHAR(150)		NULL,
+	[organizationid]    NVARCHAR(50)		NULL,
+	[isconnected]		BIT					NULL,
+	[connectedon]		DATETIME			NULL,
+	[connectedby]		NVARCHAR(150)		NULL,
+	[azureaccessneedstoberepaired] BIT		NULL,
+	[displaytag]		NVARCHAR(50)		NULL,
+	[datagenstatus]		INT					NULL,
+	[datagendate]		DATETIME			NULL
+);
+GO
+
+--DROP PROCEDURE InsertSubscriptions
+--GO
+
+CREATE PROCEDURE InsertSubscriptions 
+	@id					NVARCHAR(128),
+	@displayname		NVARCHAR(MAX),
+	@organizationid     NVARCHAR(MAX),
+	@isconnected		BIT,
+	@connectedon		DATETIME,
+	@connectedby		NVARCHAR(MAX),
+	@azureaccessneedstoberepaired BIT,
+	@displaytag			NVARCHAR(MAX),
+	@datagenstatus		INT,
+	@datagendate		DATETIME
+AS
+BEGIN
+	SET NOCOUNT ON;
+	DECLARE @CNT INT
+
+	SELECT @CNT = COUNT(*) FROM [dbo].[Subscriptions] WHERE
+		(@id	= [id]
+		AND @displayname		= [displayname]
+		AND @organizationid     = [organizationid])
+		/*
+		AND @isconnected		= [isconnected]
+		AND @connectedon		= [connectedon]
+		AND @connectedby		= [connectedby]
+		AND @azureaccessneedstoberepaired = [@azureaccessneedstoberepaired]
+		AND @displaytag			= [displaytag]
+		AND @datagenstatus		= [datagenstatus]
+		AND @datagendate		= [datagendate])
+		*/
+
+	IF ( @CNT > 0) 
+	BEGIN
+	  RETURN @CNT
+	END
+
+	INSERT INTO [dbo].[Subscriptions]
+	   ([id],
+		[displayname],
+		[organizationid],
+		[isconnected],	
+		[connectedon],
+		[connectedby],
+		[azureaccessneedstoberepaired],
+		[displaytag],
+		[datagenstatus],
+		[datagendate])
+	VALUES
+		(@id,
+		@displayname,
+		@organizationid,
+		@isconnected,
+		@connectedon,
+		@connectedby,
+		@azureaccessneedstoberepaired,
+		@displaytag,
+		@datagenstatus,
+		@datagendate)
+END
+
 --DROP TABLE [dbo].[AzureUsageRecords];
 --GO
 

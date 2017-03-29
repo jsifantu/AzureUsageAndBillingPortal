@@ -48,12 +48,19 @@ namespace WebJobBillingData
             foreach (var organization in organizations) {
                 // Get all subscriptions for the specified user
                 var subscriptions = AzureResourceManagerUtil.GetUserSubscriptions(organization.Id);
+                if (subscriptions.Count() > 0) {
+                    Functions.InsertIntoSQLDB(subscriptions);
+                }
                 foreach (var subscription in subscriptions) {
-                    DateTime sdt = DateTime.Now.AddYears(-3);
-                    DateTime edt = DateTime.Now.AddDays(-1);
-                    BillingRequest br = new BillingRequest(subscription.Id, organization.Id,
-                                                            sdt, edt);
-                    Functions.ProcessQueueMessage(br);
+                    var canManagedSubscription = AzureResourceManagerUtil.UserCanManageAccessForSubscription(subscription.Id, organization.Id);
+                    if (canManagedSubscription) {
+                        DateTime sdt = DateTime.Now.AddYears(-3);
+                        DateTime edt = DateTime.Now.AddDays(-1);
+                        BillingRequest br = new BillingRequest(subscription.Id, 
+                            organization.Id,
+                            sdt, edt);
+                        Functions.ProcessQueueMessage(br);
+                    }
                 }
             }
             return;

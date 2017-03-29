@@ -54,6 +54,58 @@ namespace WebJobBillingData
             }
         }
 
+        public static void InsertIntoSQLDB(List<Subscription> subs)
+        {
+            string connectionString = ConfigurationManager.ConnectionStrings["ASQLConn"].ToString();
+            SqlConnection connection = new SqlConnection(connectionString);
+            try {
+                connection.Open();
+
+                SqlCommand sqlCommand = new SqlCommand("InsertSubscriptions", connection);
+                sqlCommand.CommandType = CommandType.StoredProcedure;
+
+                List<SqlParameter> sqlParameters = new List<SqlParameter>();
+                sqlParameters.Add(new SqlParameter("@id", SqlDbType.NVarChar));
+                sqlParameters.Add(new SqlParameter("@displayname", SqlDbType.NVarChar));
+                sqlParameters.Add(new SqlParameter("@organizationid", SqlDbType.NVarChar));
+                sqlParameters.Add(new SqlParameter("@isconnected", SqlDbType.Bit));
+                sqlParameters.Add(new SqlParameter("@connectedon", SqlDbType.DateTime));
+                sqlParameters.Add(new SqlParameter("@connectedby", SqlDbType.NVarChar));
+                sqlParameters.Add(new SqlParameter("@azureaccessneedstoberepaired", SqlDbType.Bit));
+                sqlParameters.Add(new SqlParameter("@displaytag", SqlDbType.NVarChar));
+                sqlParameters.Add(new SqlParameter("@datagenstatus", SqlDbType.Int));
+                sqlParameters.Add(new SqlParameter("@datagendate", SqlDbType.DateTime));
+                sqlCommand.Parameters.AddRange(sqlParameters.ToArray());
+
+                foreach (var sub in subs) {
+                    // check param/value validity
+                    sqlCommand.Parameters["@id"].Value = sub.Id;
+                    sqlCommand.Parameters["@displayname"].Value = sub.DisplayName;
+                    sqlCommand.Parameters["@organizationid"].Value = sub.OrganizationId;
+                    sqlCommand.Parameters["@isconnected"].Value = sub.IsConnected;
+                    sqlCommand.Parameters["@connectedon"].Value = sub.ConnectedOn;
+                    sqlCommand.Parameters["@connectedby"].Value = sub.ConnectedBy;
+                    sqlCommand.Parameters["@azureaccessneedstoberepaired"].Value = sub.AzureAccessNeedsToBeRepaired;
+                    sqlCommand.Parameters["@displaytag"].Value = sub.DisplayTag;
+                    sqlCommand.Parameters["@datagenstatus"].Value = sub.DataGenStatus;
+                    sqlCommand.Parameters["@datagendate"].Value = sub.DataGenDate;
+                    CheckParameters(sqlCommand.Parameters);
+
+                    try  // to catch duplicate inserts...
+                    {
+                        sqlCommand.ExecuteNonQuery();
+                    } catch (Exception e) {
+                        Console.WriteLine("Exception: Possible Dublicate! InsertIntoSQLDB->e.Message: " + e.Message);
+                    }
+                }
+
+                connection.Close();
+            } catch (Exception e) {
+                Console.WriteLine("Exception: InsertIntoSQLDB->e.Message: " + e.Message);
+                connection.Close();
+            }
+        }
+
         public static void InsertIntoSQLDB(List<UsageRecord> urs)
         {
             string connectionString = ConfigurationManager.ConnectionStrings["ASQLConn"].ToString();

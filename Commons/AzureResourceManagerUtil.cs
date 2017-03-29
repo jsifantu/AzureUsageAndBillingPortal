@@ -219,7 +219,8 @@ namespace Commons
                         subscriptions.Add(new Subscription() {
                             Id = subscription.subscriptionId,
                             DisplayName = subscription.displayName,
-                            OrganizationId = organizationId
+                            OrganizationId = organizationId,
+                            ConnectedOn = DateTime.UtcNow // FIXME                           
                         });
                 }
             } catch {
@@ -276,7 +277,9 @@ namespace Commons
         {
             bool ret = false;
 
-            string signedInUserUniqueName = ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#')[ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#').Length - 1];
+            //string signedInUserUniqueName = ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#')[ClaimsPrincipal.Current.FindFirst(ClaimTypes.Name).Value.Split('#').Length - 1];
+            string signedInUserUniqueName = ConfigurationManager.AppSettings["ida:SignedInUserUniqueName"];
+            string accessToken;
 
             try {
                 // Aquire Access Token to call Azure Resource Manager
@@ -289,11 +292,18 @@ namespace Commons
                                                         string.Format(ConfigurationManager.AppSettings["ida:Authority"], organizationId),
                                                         new ADALTokenCache(signedInUserUniqueName));
 
-                Task<AuthenticationResult> result = authContext.AcquireTokenSilentAsync(
-                                                        ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"],
-                                                        credential,
-                                                        new UserIdentifier(signedInUserUniqueName, UserIdentifierType.RequiredDisplayableId));
-                result.Wait();
+                if (authContext.TokenCache.ReadItems().Count() == 0) {
+                    authContext.TokenCache.Clear();
+                    Task<AuthenticationResult> result = authContext.AcquireTokenSilentAsync(
+                                                            ConfigurationManager.AppSettings["ida:AzureResourceManagerIdentifier"],
+                                                            credential,
+                                                            new UserIdentifier(signedInUserUniqueName, UserIdentifierType.RequiredDisplayableId));
+                    result.Wait();
+                    accessToken = result.Result.AccessToken;
+                } else {
+                    accessToken = authContext.TokenCache.ReadItems().ToList()[0].AccessToken;
+                }
+
                 // Get permissions of the user on the subscription
                 string requestUrl = string.Format("{0}/subscriptions/{1}/providers/microsoft.authorization/permissions?api-version={2}",
                                                         ConfigurationManager.AppSettings["ida:AzureResourceManagerUrl"],
@@ -303,7 +313,7 @@ namespace Commons
                 // Make the GET request
                 HttpClient client = new HttpClient();
                 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", result.Result.AccessToken);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
                 HttpResponseMessage response = client.SendAsync(request).Result;
 
                 // Endpoint returns JSON with an array of Actions and NotActions
