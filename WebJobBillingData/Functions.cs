@@ -243,8 +243,7 @@ namespace WebJobBillingData
                                 ur.cost = meterInfo.MeterRates["0"] * Convert.ToDecimal(ur.quantity);
                                 if (ur.cost < 0.01M)
                                     ur.cost = 0;
-                            } catch (Exception ex)
-                            {
+                            } catch (Exception ex) {
                                 Console.WriteLine("Exception trying to apply cost info for meter: " + ur.meterId);
                             }
                             usageRecords.Add(ur);

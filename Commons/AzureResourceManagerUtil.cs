@@ -667,7 +667,8 @@ namespace Commons
 
             StringBuilder urlWParameters = new StringBuilder();
             urlWParameters.Append(url);
-            urlWParameters.AppendFormat("?{0}={1}", "api-version", HttpUtility.UrlEncode("2015-06-01-preview"));
+            urlWParameters.AppendFormat("?{0}={1}", "api-version", 
+                HttpUtility.UrlEncode(ConfigurationManager.AppSettings["ida:AzureBillingAPIVersion"]));
             urlWParameters.AppendFormat("&{0}={1}", "reportedStartTime", HttpUtility.UrlEncode(reportedStartTime));
             urlWParameters.AppendFormat("&{0}={1}", "reportedEndTime", HttpUtility.UrlEncode(reportedEndTime));
             if (!dailyReport)
@@ -689,7 +690,8 @@ namespace Commons
 
             StringBuilder urlWParameters = new StringBuilder();
             urlWParameters.Append(url);
-            urlWParameters.AppendFormat("?{0}={1}", "api-version", HttpUtility.UrlEncode("2015-06-01-preview"));
+            urlWParameters.AppendFormat("?{0}={1}", "api-version",
+                HttpUtility.UrlEncode(ConfigurationManager.AppSettings["ida:AzureBillingAPIVersion"]));
             urlWParameters.AppendFormat("&$filter=OfferDurableId eq '{0}' and Currency eq '{1}' and Locale eq '{2}' and RegionInfo eq '{3}'", offerId, currency, locale, regionInfo);
 
             return urlWParameters.ToString();
