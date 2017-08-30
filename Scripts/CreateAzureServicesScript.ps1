@@ -21,7 +21,7 @@ $TemplateFileFullPath = $WorkingDir + $TemplateFileName
 
 # If you have more than one subscription, please specify the name of the subscription that you want to use among them.
 # If you are not sure how many subscriptions you have and want to use the default one, than keep it this parameter as $AzureSubscriptionName = ""
-$AzureSubscriptionName = "BizSpark"
+$AzureSubscriptionName = "Visual Studio Enterprise"
 
 # !!! IMPORTANT !!!
 # Please refer to "Naming Rules and Restrictions" under https://docs.microsoft.com/en-us/azure/architecture/best-practices/naming-conventions  
@@ -34,7 +34,7 @@ $suffix = $suffix.Substring(0, 10)
 
 # Azure resource group parameters
 $ResourceGroupName = ("aui-resource-group" + $suffix)
-$ResourceGroupLocation = "Central US"
+$ResourceGroupLocation = "East US"
 
 # Storage account parameters
 $StorageAccountName = ("auistorage" + $suffix)
@@ -47,7 +47,7 @@ $SqlServerName = ("auisqlsr" + $suffix)
 $SqlServerLocation = $ResourceGroupLocation
 $SQLServerVersion = "12.0"
 $SqlAdministratorLogin = "mksa"
-$SqlAdministratorLoginPassword = "Password.1%"
+$SqlAdministratorLoginPassword = "a6S5iIka84zIfSwy"
 $SqlDatabaseName = ("auisqldb" + $suffix)
 $sqlEdition = "Standard"
 $sqlRequestedServiceObjectiveName = "S0";
@@ -57,12 +57,12 @@ $Web1SiteName = ("auiregistration" + $suffix)
 $Web2SiteName = ("auidashboard" + $suffix)
 $WebHostingPlanName = ("auihostingplan" + $suffix)
 $WebSiteLocation = $ResourceGroupLocation
-$webSiteInsightsLocation = "South Central US"
+$webSiteInsightsLocation = "East US"
 
 # Active Directory (AD) Application parameters
 # You have to find and update the AD App with below name on the classic portal
 $displayName1 = ("Azure Usage and Billing Insights - Registration v" + $suffix)
-$passwordADApp = "Password.1%"
+$passwordADApp = "8hCK6AzPFuz1BAe4"
 
 
 ### 1. Login to Azure Resource Manager service. Credentials will be stored under this session for furthure use
@@ -135,7 +135,7 @@ $storageKey = Get-AzureRmStorageAccountKey -Name $StorageAccountName -ResourceGr
 
 # Get tenant ID
 $tenantID = (Get-AzureRmContext).Tenant.TenantId
-# This value is manually set in AD Application settins. Get that value from the portal, if not set you can set it as your HomePageURL
+# This value is manually set in AD Application settings. Get that value from the portal, if not set you can set it as your HomePageURL
 $PostLogoutRedirectUri1 = $homePageURL1
 
 Write-Host ("Parameters to be used in the project settings / configuration files.") -foreground Green
